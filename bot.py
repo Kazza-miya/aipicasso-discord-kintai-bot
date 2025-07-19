@@ -46,7 +46,6 @@ def retry(max_retries: int = 3, backoff_factor: float = 2.0):
                     if attempt == max_retries:
                         logging.error(f"{func.__name__} giving up after {max_retries} attempts")
                         return None
-                    # バックオフ
                     await asyncio.sleep(backoff_factor ** (attempt - 1))
         return wrapper
     return decorator
@@ -137,7 +136,6 @@ async def send_slack_message(text, mention_user_id=None, thread_ts=None, use_dai
         ) as resp:
             data = await resp.json()
             if not data.get("ok"):
-                # Slack API エラーは例外化してリトライ
                 raise Exception(f"Slack API error: {data}")
             return data.get("ts")
 
@@ -163,7 +161,7 @@ async def on_voice_state_update(member, before, after):
             event_type = "clock_in"
         elif before.channel and not after.channel:
             event_type = "clock_out"
-        elif before.channel and after.channel and before.channel != after.channel:
+        elif before.channel and after.channel and before.channel != before.channel:
             event_type = "move"
         if not event_type:
             return
@@ -214,16 +212,8 @@ async def on_voice_state_update(member, before, after):
                 f"退勤時間\n{now.strftime('%Y/%m/%d %H:%M:%S')}\n\n"
                 f"勤務時間\n{format_duration(work_sec)}"
             )
-            ts = await send_slack_message(msg)
-            if ts:
-                await asyncio.sleep(2)
-                uid = await asyncio.to_thread(get_slack_user_id_sync, name)
-                mention = f"<@{uid}>\n" if uid else ""
-                thread_msg = (
-                    f"{mention}以下のテンプレを <#{DAILY_REPORT_CHANNEL_ID}> に記載してください：\n"
-                    "◆日報一言テンプレート\nやったこと\n・\n次にやること\n・\nひとこと\n・"
-                )
-                await send_slack_message(thread_msg, thread_ts=ts)
+            # Slack 通知のみ。日報テンプレート要求は削除
+            await send_slack_message(msg)
 
     except Exception as e:
         logging.error(f"on_voice_state_update error: {e}")
@@ -236,7 +226,6 @@ async def monitor_voice_channels():
             for guild in client.guilds:
                 for member in guild.members:
                     norm = normalize(member.display_name)
-                    # 除外ユーザーはスキップ
                     if norm in EXCLUDED_USERS:
                         continue
 
@@ -254,16 +243,8 @@ async def monitor_voice_channels():
                             f"退勤時間\n{now.strftime('%Y/%m/%d %H:%M:%S')}\n\n"
                             f"勤務時間\n{format_duration(work_sec)}"
                         )
-                        ts = await send_slack_message(msg)
-                        if ts:
-                            await asyncio.sleep(2)
-                            uid = await asyncio.to_thread(get_slack_user_id_sync, member.display_name)
-                            mention = f"<@{uid}>\n" if uid else ""
-                            thread_msg = (
-                                f"{mention}以下のテンプレを <#{DAILY_REPORT_CHANNEL_ID}> に記載してください：\n"
-                                "◆日報一言テンプレート\nやったこと\n・\n次にやること\n・\nひとこと\n・"
-                            )
-                            await send_slack_message(thread_msg, thread_ts=ts)
+                        # Slack 通知のみ。日報テンプレート要求は削除
+                        await send_slack_message(msg)
 
         except Exception as e:
             logging.error(f"monitor_voice_channels error: {e}")
@@ -273,22 +254,4 @@ async def monitor_voice_channels():
 # ─── Flask アプリ（ヘルスチェック）───────────────────────
 app = Flask(__name__)
 @app.route("/")
-def health_check():
-    return "OK"
-
-def run_discord_bot():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(client.start(DISCORD_TOKEN))
-
-@client.event
-async def on_ready():
-    logging.info(f"{client.user} is ready. Starting monitoring task.")
-    client.loop.create_task(monitor_voice_channels())
-
-if __name__ == "__main__":
-    build_slack_user_cache()
-    Thread(target=run_discord_bot, daemon=True).start()
-    from waitress import serve
-    port = int(os.environ.get("PORT", 5000))
-    serve(app, host="0.0.0.0", port=port)
+``**('[continued truncated due to length]', )**
