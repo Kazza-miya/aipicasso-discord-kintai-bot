@@ -151,22 +151,19 @@ async def on_voice_state_update(member, before, after):
         now   = datetime.now(JST)
         name  = member.display_name
         norm  = normalize(name)
-        # 除外ユーザーはスキップ
         if norm in EXCLUDED_USERS:
             return
 
-        # イベント種別判定
         event_type = None
         if not before.channel and after.channel:
             event_type = "clock_in"
         elif before.channel and not after.channel:
             event_type = "clock_out"
-        elif before.channel and after.channel and before.channel != before.channel:
+        elif before.channel and after.channel and before.channel != after.channel:
             event_type = "move"
         if not event_type:
             return
 
-        # 多重発火抑制
         key          = f"{member.id}-{event_type}"
         channel_name = (after.channel or before.channel).name
         ehash        = generate_event_hash(member.id, event_type, channel_name, now)
@@ -175,7 +172,6 @@ async def on_voice_state_update(member, before, after):
             return
         last_events[key] = {"timestamp": now, "event_hash": ehash}
 
-        # 休憩管理
         if after.channel and after.channel.name == "休憩室":
             rest_start_times[name] = now
         if before.channel and before.channel.name == "休憩室":
@@ -183,7 +179,6 @@ async def on_voice_state_update(member, before, after):
             if start:
                 rest_durations[name] = rest_durations.get(name, 0) + (now - start).total_seconds()
 
-        # 出勤処理
         if event_type == "clock_in" and name not in clock_in_times and after.channel.name != "休憩室":
             rest_durations[name] = 0
             clock_in_times[name] = now
@@ -193,14 +188,12 @@ async def on_voice_state_update(member, before, after):
                 f"出勤時間\n{now.strftime('%Y/%m/%d %H:%M:%S')}"
             )
 
-        # 移動処理
         elif event_type == "move" and name in clock_in_times:
             last = last_sheet_events.get(f"{name}-move")
             if not last or (now - last).total_seconds() >= 3:
                 last_sheet_events[f"{name}-move"] = now
                 await send_slack_message(f"{name} が「{after.channel.name}」に移動しました。")
 
-        # 退勤処理
         if event_type == "clock_out" and name in clock_in_times:
             clock_out = now
             clock_in  = clock_in_times.pop(name, None)
@@ -212,9 +205,7 @@ async def on_voice_state_update(member, before, after):
                 f"退勤時間\n{now.strftime('%Y/%m/%d %H:%M:%S')}\n\n"
                 f"勤務時間\n{format_duration(work_sec)}"
             )
-            # Slack 通知のみ。日報テンプレート要求は削除
             await send_slack_message(msg)
-
     except Exception as e:
         logging.error(f"on_voice_state_update error: {e}")
 
@@ -243,15 +234,30 @@ async def monitor_voice_channels():
                             f"退勤時間\n{now.strftime('%Y/%m/%d %H:%M:%S')}\n\n"
                             f"勤務時間\n{format_duration(work_sec)}"
                         )
-                        # Slack 通知のみ。日報テンプレート要求は削除
                         await send_slack_message(msg)
-
         except Exception as e:
             logging.error(f"monitor_voice_channels error: {e}")
-
         await asyncio.sleep(15)
 
 # ─── Flask アプリ（ヘルスチェック）───────────────────────
 app = Flask(__name__)
 @app.route("/")
-``**('[continued truncated due to length]', )**
+def health_check():
+    return "OK"
+
+def run_discord_bot():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(client.start(DISCORD_TOKEN))
+
+@client.event
+async def on_ready():
+    logging.info(f"{client.user} is ready. Starting monitoring task.")
+    client.loop.create_task(monitor_voice_channels())
+
+if __name__ == "__main__":
+    build_slack_user_cache()
+    Thread(target=run_discord_bot, daemon=True).start()
+    from waitress import serve
+    port = int(os.environ.get("PORT", 5000))
+    serve(app, host="0.0.0.0", port=port)
