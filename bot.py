@@ -75,6 +75,7 @@ def format_duration(seconds: int) -> str:
 EXCLUDED_USERS = {
     normalize("宮内 和貴 / Kazuki Miyauchi"),
     normalize("ryuji"),
+    normalize("井上 璃久 / Riku Inoue"),
 }
 
 # ─── Slack ユーザーキャッシュ ──────────────────────────────
