@@ -74,6 +74,7 @@ def format_duration(seconds: int) -> str:
 
 # ─── 除外ユーザー設定 ───────────────────────────────────────
 EXCLUDED_USERS = {
+    normalize("宮内 和貴 / Kazuki Miyauchi"),
     normalize("ryuji"),
 }
 
