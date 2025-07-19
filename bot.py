@@ -72,12 +72,9 @@ def format_duration(seconds: int) -> str:
     minutes = minutes % 60
     return f"{hours:02d}:{minutes:02d}"
 
-# ─── 通知対象ユーザー設定 ─────────────────────────────────
-ALLOWED_USERS = {
-    normalize("井上 璃久 / Riku Inoue"),
-    normalize("平井 悠喜 / Yuki Hirai"),
-    normalize("松岡満貴 / Maki Matsuoka"),
-    normalize("桑名優輔 / Yusuke Kuwana"),    
+# ─── 除外ユーザー設定 ───────────────────────────────────────
+EXCLUDED_USERS = {
+    normalize("ryuji"),
 }
 
 # ─── Slack ユーザーキャッシュ ──────────────────────────────
@@ -155,7 +152,8 @@ async def on_voice_state_update(member, before, after):
         now   = datetime.now(JST)
         name  = member.display_name
         norm  = normalize(name)
-        if norm not in ALLOWED_USERS:
+        # 除外ユーザーはスキップ
+        if norm in EXCLUDED_USERS:
             return
 
         # イベント種別判定
@@ -237,7 +235,8 @@ async def monitor_voice_channels():
             for guild in client.guilds:
                 for member in guild.members:
                     norm = normalize(member.display_name)
-                    if norm not in ALLOWED_USERS:
+                    # 除外ユーザーはスキップ
+                    if norm in EXCLUDED_USERS:
                         continue
 
                     if member.display_name in clock_in_times and not member.voice:
