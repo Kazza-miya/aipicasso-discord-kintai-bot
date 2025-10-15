@@ -78,8 +78,19 @@ EXCLUDED_USERS = {
     normalize("井上 璃久 / Riku Inoue"),
 }
 
+# ─── Slack チャンネル振り分け設定 ──────────────────────────
+USER_SLACK_CHANNEL_MAP = {
+    normalize("Li Qiuhan"): "C093TJYG3C0",
+    normalize("桑名優輔 / Yusuke Kuwana"): "C093BK505FU",
+    normalize("郭宇培/GUO YUPEI"): "C08GADEEHE1",
+}
+
 # ─── Slack ユーザーキャッシュ ──────────────────────────────
 slack_user_cache = {}
+
+def get_user_slack_channel(name: str) -> str:
+    """ユーザーごとのSlack投稿先チャンネルIDを返す。"""
+    return USER_SLACK_CHANNEL_MAP.get(normalize(name), SLACK_CHANNEL_ID)
 
 def build_slack_user_cache():
     try:
@@ -118,8 +129,19 @@ def get_slack_user_id_sync(discord_name: str):
 
 # ─── 非同期 Slack 通知 with Retry ────────────────────────────
 @retry(max_retries=3, backoff_factor=2.0)
-async def send_slack_message(text, mention_user_id=None, thread_ts=None, use_daily_channel=False):
-    channel = DAILY_REPORT_CHANNEL_ID if use_daily_channel else SLACK_CHANNEL_ID
+async def send_slack_message(
+    text,
+    mention_user_id=None,
+    thread_ts=None,
+    use_daily_channel=False,
+    channel_override=None,
+):
+    if use_daily_channel:
+        channel = DAILY_REPORT_CHANNEL_ID
+    elif channel_override:
+        channel = channel_override
+    else:
+        channel = SLACK_CHANNEL_ID
     msg     = f"<@{mention_user_id}>\n{text}" if mention_user_id else text
     payload = {"channel": channel, "text": msg}
     if thread_ts:
@@ -155,6 +177,8 @@ async def on_voice_state_update(member, before, after):
         if norm in EXCLUDED_USERS:
             return
 
+        user_channel = get_user_slack_channel(name)
+
         event_type = None
         if not before.channel and after.channel:
             event_type = "clock_in"
@@ -186,14 +210,18 @@ async def on_voice_state_update(member, before, after):
             last_sheet_events[f"{name}-出勤"] = now
             await send_slack_message(
                 f"{name} が「{after.channel.name}」に出勤しました。\n"
-                f"出勤時間\n{now.strftime('%Y/%m/%d %H:%M:%S')}"
+                f"出勤時間\n{now.strftime('%Y/%m/%d %H:%M:%S')}",
+                channel_override=user_channel,
             )
 
         elif event_type == "move" and name in clock_in_times:
             last = last_sheet_events.get(f"{name}-move")
             if not last or (now - last).total_seconds() >= 3:
                 last_sheet_events[f"{name}-move"] = now
-                await send_slack_message(f"{name} が「{after.channel.name}」に移動しました。")
+                await send_slack_message(
+                    f"{name} が「{after.channel.name}」に移動しました。",
+                    channel_override=user_channel,
+                )
 
         if event_type == "clock_out" and name in clock_in_times:
             clock_out = now
@@ -206,7 +234,7 @@ async def on_voice_state_update(member, before, after):
                 f"退勤時間\n{now.strftime('%Y/%m/%d %H:%M:%S')}\n\n"
                 f"勤務時間\n{format_duration(work_sec)}"
             )
-            await send_slack_message(msg)
+            await send_slack_message(msg, channel_override=user_channel)
     except Exception as e:
         logging.error(f"on_voice_state_update error: {e}")
 
@@ -229,13 +257,14 @@ async def monitor_voice_channels():
 
                         rest_sec = rest_durations.pop(member.display_name, 0)
                         work_sec = int((now - clock_in).total_seconds() - rest_sec)
+                        user_channel = get_user_slack_channel(member.display_name)
 
                         msg = (
                             f"{member.display_name} の接続が切れました（強制退勤と見なします）。\n"
                             f"退勤時間\n{now.strftime('%Y/%m/%d %H:%M:%S')}\n\n"
                             f"勤務時間\n{format_duration(work_sec)}"
                         )
-                        await send_slack_message(msg)
+                        await send_slack_message(msg, channel_override=user_channel)
         except Exception as e:
             logging.error(f"monitor_voice_channels error: {e}")
         await asyncio.sleep(15)
